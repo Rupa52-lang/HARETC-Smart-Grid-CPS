@@ -1,0 +1,4194 @@
+%% =========================================================
+% HADR-RETC FRAMEWORK
+% STEP 1 : LOAD SMART GRID DATASETS + CPS ARCHITECTURE
+% STEP 2 : DEFINE NONLINEAR SMART GRID CPS STATE MODEL
+% ==========================================================
+clc;
+clear;
+close all;
+
+rng(1);
+
+%% =========================================================
+% STEP 1 : LOAD SMART GRID DATASETS
+% ==========================================================
+
+folderPath = 'D:\MATLAB CODE\PMU Dataset';
+
+files = dir(fullfile(folderPath,'sigId-*.csv'));
+
+allData = table();
+
+for i = 1:length(files)
+temp = readtable( ...
+        fullfile(folderPath,files(i).name), ...
+        'VariableNamingRule','preserve');
+
+    allData = [allData; temp];
+
+    fprintf('Loaded File %d : %s\n', ...
+            i,files(i).name);
+
+end
+
+fprintf('\nAll PMU Files Merged Successfully\n');
+
+disp(size(allData));
+%% =========================================================
+% DATASET VERIFICATION
+%% =========================================================
+
+fprintf('\n====================================\n');
+fprintf('PMU DATASET VERIFICATION\n');
+fprintf('====================================\n');
+
+fprintf('Total CSV Files Loaded = %d\n',length(files));
+fprintf('Total Samples = %d\n',height(allData));
+fprintf('Total Variables = %d\n',width(allData));
+
+fprintf('====================================\n');
+
+
+%% =========================================================
+% EXTRACT IMPORTANT SMART GRID PARAMETERS
+% ==========================================================
+
+disp(allData.Properties.VariableNames')
+
+
+%% =========================================================
+% CONVERT TO NUMERIC
+% ==========================================================
+frequency_data = double(allData.("BESS.f"));
+
+voltage_data = double(allData.("BESS.va_m"));
+
+current_data = double(allData.("BESS.ia_m"));
+
+powerflow_data = ...
+double(allData.("BESS.va_m") .* allData.("BESS.ia_m"));
+
+
+%% REMOVE MISSING VALUES
+
+frequency_data(isnan(frequency_data)) = 50;
+
+voltage_data(isnan(voltage_data)) = 0;
+
+current_data(isnan(current_data)) = 0;
+
+powerflow_data(isnan(powerflow_data)) = 0;
+
+%% =========================================================
+% DATASET STATISTICS
+% ==========================================================
+
+fprintf('\nDATASET STATISTICS\n');
+
+fprintf('Frequency Mean = %.4f\n', ...
+        mean(frequency_data));
+
+fprintf('Frequency Std = %.4f\n', ...
+        std(frequency_data));
+
+fprintf('Voltage Mean = %.4f\n', ...
+        mean(voltage_data));
+
+fprintf('Voltage Std = %.4f\n', ...
+        std(voltage_data));
+
+fprintf('Current Mean = %.4f\n', ...
+        mean(current_data));
+
+fprintf('Current Std = %.4f\n', ...
+        std(current_data));
+
+fprintf('Power Flow Mean = %.4f\n', ...
+        mean(powerflow_data));
+
+fprintf('Power Flow Std = %.4f\n', ...
+        std(powerflow_data));
+
+
+
+%% =========================================================
+% PMU DATA VISUALIZATION
+%% ==========================================================
+
+figure;
+plot(frequency_data,'LineWidth',1.5);
+title('PMU Frequency');
+xlabel('Samples');
+ylabel('Frequency');
+grid on;
+
+figure;
+plot(voltage_data,'LineWidth',1.5);
+title('PMU Voltage');
+xlabel('Samples');
+ylabel('Voltage');
+grid on;
+
+figure;
+plot(current_data,'LineWidth',1.5);
+title('PMU Current');
+xlabel('Samples');
+ylabel('Current');
+grid on;
+
+figure;
+plot(powerflow_data,'LineWidth',1.5);
+title('PMU Power Flow');
+xlabel('Samples');
+ylabel('Power Flow');
+grid on;
+
+
+
+%% =========================================================
+% REMOVE MISSING VALUES
+% ==========================================================
+
+frequency_data(isnan(frequency_data)) = 50;
+
+voltage_data(isnan(voltage_data)) = 0;
+
+current_data(isnan(current_data)) = 0;
+
+powerflow_data(isnan(powerflow_data)) = 0;
+
+
+%% =========================================================
+% STEP 1 : DEFINE SMART GRID CPS ARCHITECTURE
+% ==========================================================
+
+%% ---------------- DEVICE LAYER ----------------
+
+DeviceLayer.smart_meters = 300;
+
+DeviceLayer.PMUs = 100;
+
+DeviceLayer.IoT_sensors = 200;
+
+Total_Devices = DeviceLayer.smart_meters + ...
+                DeviceLayer.PMUs + ...
+                DeviceLayer.IoT_sensors;
+
+fprintf('\nTotal Devices = %d\n', Total_Devices);
+
+
+%% ---------------- EDGE LAYER ----------------
+
+EdgeLayer.num_substations = 3;
+
+for i = 1 : EdgeLayer.num_substations
+    
+    EdgeLayer.controller(i).id = i;
+    
+    EdgeLayer.controller(i).connected_devices = ...
+        round(Total_Devices / EdgeLayer.num_substations);
+    
+end
+
+fprintf('Edge Layer Initialized\n');
+
+
+%% ---------------- CLOUD LAYER ----------------
+
+CloudLayer.global_coordinator = true;
+
+CloudLayer.adaptive_parameter_manager = true;
+
+fprintf('Cloud Layer Initialized\n');
+
+
+%% =========================================================
+% STEP 2 : DEFINE NONLINEAR SMART GRID CPS STATE MODEL
+% ==========================================================
+
+%% SELECT SAMPLE TIME INDEX
+
+k = 1000;
+
+
+%% =========================================================
+% NORMALIZE SMART GRID DATA
+% ==========================================================
+
+frequency_norm = ...
+frequency_data/max(abs(frequency_data));
+
+voltage_norm = ...
+voltage_data/max(abs(voltage_data));
+
+current_norm = ...
+current_data/max(abs(current_data));
+
+powerflow_norm = ...
+powerflow_data/max(abs(powerflow_data));
+
+%% =========================================================
+% DEFINE SMART GRID CPS STATES
+% ==========================================================
+
+Delta_f = (frequency_data(k)-50)/10;
+
+Delta_V = ...
+voltage_data(k)-mean(voltage_data);
+
+Delta_I = ...
+current_data(k)-mean(current_data);
+
+Delta_P = ...
+powerflow_data(k)-mean(powerflow_data);
+
+%% =========================================================
+% NONLINEAR SMART GRID CPS STATE VECTOR
+% ==========================================================
+
+x = [Delta_f;
+     Delta_V;
+     Delta_I;
+     Delta_P];
+
+disp(x);
+
+figure;
+
+bar(x);
+
+title('Initial CPS State Vector');
+
+xlabel('States');
+
+ylabel('Magnitude');
+
+xticklabels({'\Deltaf','\DeltaV','\DeltaI','\DeltaP'});
+
+grid on;
+
+%% =========================================================
+% STEP 3 : NONLINEAR SMART GRID DYNAMIC MODEL
+% ==========================================================
+
+fprintf('\nSTEP 3 : Nonlinear Smart Grid Dynamic Model\n');
+
+
+%% =========================================================
+% SYSTEM DYNAMICS MATRIX (A)
+% ==========================================================
+
+% Smart grid CPS dynamic behavior
+A = [0.54 0.010 0.005 0.000;
+     0.010 0.53 0.010 0.005;
+     0.005 0.010 0.55 0.010;
+     0.000 0.005 0.010 0.54];
+
+fprintf('\nSystem Dynamics Matrix A:\n');
+
+disp(A);
+
+
+%% =========================================================
+% CONTROL MATRIX (B)
+% ==========================================================
+
+% Control influence matrix
+
+B = [0.10   0.00;
+     0.00   0.10;
+     0.05   0.02;
+     0.02   0.08];
+
+fprintf('\nControl Matrix B:\n');
+
+disp(B);
+
+
+%% =========================================================
+% ATTACK INFLUENCE MATRIX (E)
+% ==========================================================
+
+% Cyber attack/disturbance influence
+
+E = [0.08 0.05;
+     0.06 0.05;
+     0.04 0.03;
+     0.03 0.04];
+
+fprintf('\nAttack Influence Matrix E:\n');
+
+disp(E);
+figure;
+imagesc(A);
+colorbar;
+title('System Dynamics Matrix A');
+
+figure;
+imagesc(B);
+colorbar;
+title('Control Matrix B');
+
+figure;
+imagesc(E);
+colorbar;
+title('Attack Influence Matrix E');
+
+%% =========================================================
+% CONTROL INPUT VECTOR u(t)
+% ==========================================================
+
+% Adaptive control signal
+
+u = [0.10;
+     0.05];
+
+fprintf('\nControl Input u(t):\n');
+
+disp(u);
+
+
+%% =========================================================
+% CYBER DISTURBANCE VECTOR d(t)
+% ==========================================================
+
+% Hybrid cyber disturbance
+
+d = [0.02;
+     0.01];
+
+fprintf('\nCyber Disturbance d(t):\n');
+
+disp(d);
+
+
+%% =========================================================
+% NONLINEAR SMART GRID FUNCTION phi(x)
+% ==========================================================
+
+% Nonlinear renewable/load dynamics
+
+phi_x = 0.03*sin(x) + 0.001*(x.^2);
+
+fprintf('\nNonlinear Smart Grid Term phi(x):\n');
+
+disp(phi_x);
+
+
+%% =========================================================
+% PROPOSED NONLINEAR CPS MODEL
+% ==========================================================
+
+% x(t+1) = A*x(t) + B*u(t) + E*d(t) + phi(x)
+
+x_next = A*x + B*u + E*d + phi_x;
+
+fprintf('\nNext Smart Grid CPS State x(t+1):\n');
+
+disp(x_next);
+
+
+
+
+%% =========================================================
+% STEP 4 : DEFINE NONLINEAR SMART GRID FUNCTION
+% ==========================================================
+
+fprintf('\nSTEP 4 : PMU Measurement Uncertainty and Grid Disturbance Model\n');
+
+
+%% =========================================================
+% NONLINEAR SMART GRID FUNCTION
+% ==========================================================
+
+% phi(x) = 0.03*sin(x) + 0.03*x^2
+
+% This models:
+% - nonlinear load dynamics
+% - renewable uncertainty
+% - voltage fluctuation
+
+phi_x = 0.03 * sin(x) + 0.001 * (x.^2);
+
+
+%% =========================================================
+% DISPLAY NONLINEAR FUNCTION VALUES
+% ==========================================================
+
+fprintf('\nNonlinear Smart Grid Function phi(x):\n');
+
+disp(phi_x);
+
+
+%% =========================================================
+% INDIVIDUAL NONLINEAR EFFECTS
+% ==========================================================
+
+% Nonlinear sinusoidal fluctuation
+
+sin_component = 0.03 * sin(x);
+
+% Nonlinear quadratic fluctuation
+
+quadratic_component = 0.001 * (x.^2);
+
+
+fprintf('\nSinusoidal Renewable Fluctuation:\n');
+
+disp(sin_component);
+
+
+fprintf('\nQuadratic Nonlinear Load Dynamics:\n');
+
+disp(quadratic_component);
+
+
+
+%% =========================================================
+% STEP 5 : HYBRID CYBER ATTACK MODELING
+% ==========================================================
+
+fprintf('\nSTEP 5 : Hybrid Cyber Attack Modeling\n');
+
+%% =========================================================
+% TIME PARAMETERS
+% ==========================================================
+
+T = 10000;
+time = 1:T;
+
+%% =========================================================
+% DoS ATTACK MODEL
+% ==========================================================
+
+% Denial-of-Service attack blocks communication
+
+d_DoS = zeros(2,T);
+
+for t = 7800:8200
+    d_DoS(:,t) = [0.35;
+                  0.30];
+end
+
+fprintf('\nDoS Attack Initialized\n');
+
+%% =========================================================
+% FDIA ATTACK MODEL
+% ==========================================================
+
+% False Data Injection Attack
+
+d_FDIA = zeros(2,T);
+
+for t = 8200:8600
+    d_FDIA(:,t) = [0.55*sin(0.1*t);
+                   0.45*cos(0.1*t)];
+end
+
+fprintf('FDIA Attack Initialized\n');
+
+%% =========================================================
+% BIAS ATTACK MODEL
+% ==========================================================
+
+% Constant malicious offset injection
+
+d_Bias = zeros(2,T);
+
+for t = 8600:9000
+    d_Bias(:,t) = [0.45;
+                   0.35];
+end
+
+fprintf('Bias Attack Initialized\n');
+
+%% =========================================================
+% BURST ATTACK MODEL
+% ==========================================================
+
+% Sudden intermittent burst attack
+
+d_Burst = zeros(2,T);
+
+for t = 9000:9400
+
+    if mod(t,5)==0
+
+        d_Burst(:,t) = [0.90;
+                        0.75];
+
+    end
+
+end
+
+fprintf('Burst Attack Initialized\n');
+
+%% =========================================================
+% HYBRID ATTACK WINDOW
+% ==========================================================
+
+for t = 9400:10000
+
+    % DoS
+    d_DoS(:,t) = [0.45;
+                  0.35];
+
+    % FDIA
+    d_FDIA(:,t) = [0.65*sin(0.1*t);
+                   0.55*cos(0.1*t)];
+
+    % Bias
+    d_Bias(:,t) = [0.50;
+                   0.40];
+
+    % Burst
+    if mod(t,5)==0
+
+        d_Burst(:,t) = [1.10;
+                        0.90];
+
+    end
+
+end
+
+fprintf('\nSIMULTANEOUS HYBRID ATTACK WINDOW = 9400 TO 10000\n');
+fprintf('DoS + FDIA + Bias + Burst Active Together\n');
+
+%% =========================================================
+% TOTAL HYBRID CYBER ATTACK VECTOR
+% ==========================================================
+
+d_total = d_DoS + ...
+          d_FDIA + ...
+          d_Bias + ...
+          d_Burst;
+
+fprintf('\nTotal Hybrid Cyber Attack Vector Created\n');
+
+%% =========================================================
+% ATTACK SEVERITY
+% ==========================================================
+
+S = zeros(1,T);
+
+for t = 1:T
+    S(t) = norm(d_total(:,t));
+end
+
+figure;
+
+plot(time,S,'r','LineWidth',2.5);
+
+title('Hybrid Attack Severity');
+
+xlabel('Time Step');
+
+ylabel('Attack Severity');
+
+xlim([7800 10000]);
+
+grid on;
+grid minor;
+box on;
+
+%% =========================================================
+% APPLY ATTACK TO CPS STATES
+% ==========================================================
+
+x_attack = zeros(4,T);
+
+x_attack(:,1) = x;
+
+for t = 1:T-1
+
+    % Nonlinear function
+    phi_attack = 0.03*sin(x_attack(:,t)) + ...
+                 0.001*(x_attack(:,t).^2);
+
+    % Attacked CPS dynamics
+    x_attack(:,t+1) = A*x_attack(:,t) + ...
+                      B*u + ...
+                      E*d_total(:,t) + ...
+                      phi_attack;
+
+end
+
+%% =========================================================
+% VISUALIZATION OF TOTAL HYBRID ATTACK
+% ==========================================================
+
+figure;
+
+plot(time,d_total(1,:),'LineWidth',2.5);
+
+title('Total Hybrid Cyber Attack');
+
+xlabel('Time Step');
+
+ylabel('Attack Magnitude');
+
+xlim([7800 10000]);
+
+grid on;
+grid minor;
+box on;
+
+%% =========================================================
+% DISPLAY FINAL ATTACKED STATE
+% ==========================================================
+
+fprintf('\nFinal CPS State Under Hybrid Attacks:\n');
+
+disp(x_attack(:,end));
+%% =========================================================
+% STEP 6 : DEVICE LAYER ADAPTIVE EVENT-TRIGGERED MECHANISM
+% ==========================================================
+
+fprintf('\nSTEP 6 : Device Layer Adaptive Event Triggering\n');
+
+
+%% =========================================================
+% EVENT-TRIGGER PARAMETERS
+% ==========================================================
+
+T = 10000;
+
+time = 1:T;
+
+% Triggered state matrix
+
+x_trigger = zeros(4,T);
+
+% Initial transmitted state
+
+x_trigger(:,1) = x_attack(:,1);
+
+% Error matrix
+
+e = zeros(4,T);
+
+% Trigger instants
+
+trigger_instants = [];
+
+
+%% =========================================================
+% ADAPTIVE THRESHOLD PARAMETERS
+% ==========================================================
+
+alpha1 = 0.02;
+alpha2 = 0.0005;
+alpha3 = 0.0010;
+alpha4 = 0.0008;
+alpha5 = 0.0003;
+
+%% =========================================================
+% RESOURCE / ATTACK / DELAY PARAMETERS
+% ==========================================================
+
+% Attack severity
+
+S = zeros(1,T);
+
+% Resource availability
+
+R = zeros(1,T);
+
+
+% Communication delay
+
+D = zeros(1,T);
+
+%% =========================================================
+% RESOURCE / ATTACK / DELAY UPDATE
+% ==========================================================
+
+for t = 1:T
+    
+    % Attack severity
+    
+    S(t) = norm(d_total(:,t));
+    
+    % Resource availability
+    
+    R(t) = 0.5 + 0.5*rand;
+    
+    % Communication delay
+    
+    D(t) = 0.01 + 0.02*rand;
+    
+end
+
+fprintf('\nEdge-to-Device Adaptive Feedback\n');
+
+EdgeLayer.attack_feedback = zeros(1,T);
+
+DeviceLayer.dynamic_threshold = zeros(1,T);
+
+DeviceLayer.trust_score = ones(1,T);
+
+for t = 1:T
+
+    DeviceLayer.dynamic_threshold(t)=...
+        0.05 + ...
+        0.08*S(t) + ...
+        0.05*D(t) + ...
+        0.01*EdgeLayer.attack_feedback(max(t,1));
+
+end
+%% =========================================================
+% ADAPTIVE EVENT-TRIGGERING MECHANISM
+% ==========================================================
+
+for t = 2:T
+    
+    %% -----------------------------------------------------
+    % ERROR SIGNAL
+    % e_i(t) = x_i(t_k) - x_i(t)
+    % ------------------------------------------------------
+    
+    e(:,t) = x_trigger(:,t-1) - x_attack(:,t);
+    
+    
+    %% -----------------------------------------------------
+    % ADAPTIVE TRIGGER THRESHOLD
+    % ------------------------------------------------------
+   threshold = ...
+DeviceLayer.dynamic_threshold(t) + ...
+alpha3*R(t) + ...
+alpha5*norm(x_attack(:,t));
+    
+    
+    %% -----------------------------------------------------
+    % EVENT TRIGGER DECISION
+    % ------------------------------------------------------
+    
+    if norm(e(:,t)) >= threshold
+        
+        % Trigger communication
+        
+        x_trigger(:,t) = x_attack(:,t);
+        
+        % Store trigger instant
+        
+        trigger_instants = [trigger_instants t];
+        
+    else
+        
+        % No communication
+        
+        x_trigger(:,t) = x_trigger(:,t-1);
+        
+    end
+    
+end
+
+
+%% =========================================================
+% DISPLAY TRIGGER INFORMATION
+% ==========================================================
+
+fprintf('\nTotal Trigger Events = %d\n', ...
+         length(trigger_instants));
+
+
+fprintf('\nTrigger Instants:\n');
+
+disp(trigger_instants);
+
+
+
+
+
+%% =========================================================
+% VISUALIZATION OF ADAPTIVE THRESHOLD
+% ==========================================================
+
+threshold_vector = zeros(1,T);
+
+for t = 1:T
+    
+    threshold_vector(t) = alpha1 + ...
+                          alpha2*S(t) + ...
+                          alpha3*R(t) + ...
+                          alpha4*D(t) + ...
+                          alpha5*norm(x_attack(:,t));
+end
+
+
+figure;
+
+plot(time,threshold_vector,'LineWidth',2);
+
+title('Adaptive Trigger Threshold');
+
+xlabel('Time Step');
+
+ylabel('Threshold Value');
+
+grid on;
+
+
+%% =========================================================
+% VISUALIZATION OF EVENT TRIGGERS
+% ==========================================================
+
+figure;
+
+stem(trigger_instants, ...
+     ones(size(trigger_instants)), ...
+     'filled');
+
+title('Event Trigger Instants');
+
+xlabel('Time Step');
+
+ylabel('Trigger Event');
+
+grid on;
+
+
+
+
+
+%% =========================================================
+% STEP 7 : EDGE LAYER WEIGHTED AGGREGATION
+% ==========================================================
+
+fprintf('\nSTEP 7 : Edge Layer Aggregation\n');
+
+
+%% =========================================================
+% EDGE LAYER PARAMETERS
+% ==========================================================
+
+% Number of edge substations
+
+N_edge = EdgeLayer.num_substations;
+
+% Devices connected to each edge node
+
+devices_per_edge = round(Total_Devices / N_edge);
+
+fprintf('\nNumber of Edge Nodes = %d\n', N_edge);
+
+fprintf('Devices per Edge Node = %d\n', devices_per_edge);
+
+
+%% =========================================================
+% INITIALIZE EDGE STATES
+% ==========================================================
+
+% Edge aggregated states
+
+x_edge = zeros(4,T);
+
+% Adaptive weights
+
+w = zeros(Total_Devices,T);
+
+%% =========================================================
+% EDGE LAYER HYBRID ATTACK
+%% =========================================================
+
+edge_DoS   = zeros(4,T);
+edge_FDIA  = zeros(4,T);
+edge_Bias  = zeros(4,T);
+edge_Burst = zeros(4,T);
+
+% DoS
+for t=7800:8200
+    edge_DoS(:,t)=[0.30;0.25;0.20;0.15];
+end
+
+% FDIA
+for t=8200:8600
+    edge_FDIA(:,t)=[0.30*sin(0.1*t);
+                    0.25*cos(0.1*t);
+                    0.20*sin(0.1*t);
+                    0.15*cos(0.1*t)];
+end
+
+% Bias
+for t=8600:9000
+    edge_Bias(:,t)=[0.25;
+                    0.20;
+                    0.15;
+                    0.10];
+end
+
+% Burst
+for t=9000:9400
+
+    if mod(t,5)==0
+
+        edge_Burst(:,t)=[0.60;
+                         0.50;
+                         0.40;
+                         0.30];
+    end
+end
+
+% Hybrid Window
+for t=9400:10000
+
+    edge_DoS(:,t)=[0.30;0.25;0.20;0.15];
+
+    edge_FDIA(:,t)=[0.30*sin(0.1*t);
+                    0.25*cos(0.1*t);
+                    0.20*sin(0.1*t);
+                    0.15*cos(0.1*t)];
+
+    edge_Bias(:,t)=[0.25;
+                    0.20;
+                    0.15;
+                    0.10];
+
+    if mod(t,5)==0
+
+        edge_Burst(:,t)=[0.60;
+                         0.50;
+                         0.40;
+                         0.30];
+    end
+end
+
+edge_total = edge_DoS + ...
+             edge_FDIA + ...
+             edge_Bias + ...
+             edge_Burst;
+
+
+%% Device Trust Scores
+
+% Device-wise initial trust based on device category
+trust_SM  = 0.90 * ones(DeviceLayer.smart_meters,1);
+trust_PMU = 0.95 * ones(DeviceLayer.PMUs,1);
+trust_IoT = 0.85 * ones(DeviceLayer.IoT_sensors,1);
+
+% Combine device-wise trust values
+device_trust = [
+    trust_SM;
+    trust_PMU;
+    trust_IoT
+];
+
+% Keep trust within valid range
+device_trust = max(min(device_trust,1),0.7);
+%% =========================================================
+% COMPUTE ADAPTIVE DEVICE WEIGHTS
+%
+% w_i(t) = Trust_i / (1 + S_i(t) + D_i(t))
+%
+% Higher attack/delay -> lower trust weight
+% ==========================================================
+
+for i = 1:Total_Devices
+    
+    for t = 1:T
+        
+        % Adaptive trust weight
+        
+        w(i,t) = ...
+device_trust(i) / ...
+(1 + S(t) + D(t));
+        
+    end
+    
+end
+
+fprintf('\nAdaptive Device Weights Computed\n');
+
+
+%% =========================================================
+% NORMALIZE WEIGHTS
+% ==========================================================
+
+for t = 1:T
+    
+    w(:,t) = w(:,t) / sum(w(:,t));
+    
+end
+
+
+%% =========================================================
+% EDGE LAYER WEIGHTED AGGREGATION
+%
+% x_edge_j(t) = sum( w_i(t) * x_i(t) )
+% ==========================================================
+
+for t = 1:T
+    
+    aggregated_state = zeros(4,1);
+    
+    for i = 1:Total_Devices
+        
+        % Simulated device state
+        
+ attack_effect = zeros(4,1);
+
+attack_effect(1) = d_total(1,t);
+
+attack_effect(2) = d_total(2,t);
+
+attack_effect(3) = mean(d_total(:,t));
+
+attack_effect(4) = mean(d_total(:,t));
+
+device_state = ...
+x_trigger(:,t) + ...
+0.01*randn(4,1) + ...
+0.005*attack_effect;
+        % Weighted aggregation
+        
+        aggregated_state = aggregated_state + ...
+                           w(i,t) * device_state;
+    end
+    
+    % Store edge aggregated state
+    
+    x_edge(:,t)=aggregated_state + edge_total(:,t);
+    
+end
+
+fprintf('Edge Layer Aggregation Completed\n');
+
+
+
+%% =========================================================
+% DISPLAY FINAL EDGE AGGREGATED STATE
+% ==========================================================
+
+fprintf('\nFinal Edge Aggregated State:\n');
+
+disp(x_edge(:,end));
+
+figure;
+
+plot(x_edge');
+
+title('Edge Aggregated States');
+
+xlabel('Time');
+
+ylabel('State Value');
+
+legend('\Deltaf','\DeltaV','\DeltaI','\DeltaP');
+
+grid on;
+
+
+
+
+
+
+%% =========================================================
+% STEP 8 : ATTACK ESTIMATION AND STATE RECONSTRUCTION
+% ==========================================================
+
+fprintf('\nSTEP 8 : Attack Estimation and State Reconstruction\n');
+
+
+%% =========================================================
+% ESTIMATED CPS STATES
+% ==========================================================
+% Estimated state matrix
+
+x_est = zeros(4,T);
+
+% Initial estimated state
+
+x_est(:,1) = x_edge(:,1);
+
+
+%% =========================================================
+% ESTIMATED ATTACK VECTOR
+% ==========================================================
+
+% Estimated attack matrix
+
+d_est = zeros(4,T);
+
+
+
+%% =========================================================
+% NONLINEAR STATE ESTIMATION MODEL
+%
+% x_est(t+1) =
+% A*x_hat(t) + B*u(t)
+% + phi(x_hat(t))
+% + d_hat(t)
+%
+% where:
+% x_est = estimated state
+% d_hat = estimated attack
+% ==========================================================
+
+for t = 1:T-1
+    
+    %% -----------------------------------------------------
+    % ATTACK ESTIMATION
+    %
+estimation_error = norm(x_edge(:,t)-x_est(:,t));
+observer_gain = 0.82 + ...
+                0.10*estimation_error + ...
+                0.05*norm(d_total(:,t));
+
+observer_gain = min(observer_gain,1.50);
+observer_gain = min(observer_gain,0.95);
+
+innovation = ...
+x_edge(:,t)-x_est(:,t);
+
+d_est(:,t)=...
+0.85*d_est(:,max(t-1,1))+...
+observer_gain*innovation;
+
+    %% -----------------------------------------------------
+    % NONLINEAR FUNCTION
+    % ------------------------------------------------------
+    
+   phi_est = 0.03*sin(x_est(:,t)) + ...
+          0.001*(x_est(:,t).^2);
+    
+    %% -----------------------------------------------------
+    % NONLINEAR STATE ESTIMATION
+    % ------------------------------------------------------
+    
+   x_est(:,t+1) = A*x_est(:,t) + ...
+               B*u + ...
+               phi_est + ...
+               d_est(:,t);
+    
+end
+
+
+%% =========================================================
+% DISPLAY FINAL ESTIMATED STATE
+% ==========================================================
+
+fprintf('\nFinal Estimated CPS State:\n');
+
+disp(x_est(:,end));
+
+
+%% =========================================================
+% DISPLAY FINAL ESTIMATED ATTACK
+% ==========================================================
+
+fprintf('\nFinal Estimated Attack:\n');
+
+%% =========================================================
+% STATE RECONSTRUCTION
+%% =========================================================
+
+x_rec = x_edge - d_est;
+
+fprintf('\nState Reconstruction Completed\n');
+
+disp(d_est(:,end-1));
+
+figure;
+
+plot(vecnorm(d_est),'LineWidth',2);
+
+title('Estimated Attack Magnitude');
+
+xlabel('Time');
+
+ylabel('Attack Estimate');
+
+grid on;
+
+
+
+
+%% =========================================================
+% DYNAMIC TRUST UPDATE
+%% =========================================================
+
+DetectionAccuracy = zeros(1,T);
+
+for t = 1:T
+
+    DetectionAccuracy(t) = ...
+        1/(1 + norm(d_total(:,t) - d_est(1:2,t)));
+
+end
+
+Trust = zeros(1,T);
+
+Trust(1) = 1;
+
+for t = 1:T-1
+
+   Trust(t+1)=0.95*Trust(t) ...
+          +0.10*DetectionAccuracy(t) ...
+          -0.01*S(t);
+    Trust(t+1)=max(min(Trust(t+1),1),0.2);
+
+end
+
+DeviceLayer.trust_score = Trust;
+
+fprintf('\nDynamic Trust Update Completed\n');
+fprintf('\nFinal Trust Score = %.4f\n',Trust(end));
+
+figure;
+
+plot(time,Trust,'LineWidth',2);
+
+title('Dynamic Trust Score');
+
+xlabel('Time');
+
+ylabel('Trust');
+
+grid on;
+
+
+fprintf('Minimum Trust Score = %.4f\n', ...
+min(Trust));
+
+fprintf('Maximum Trust Score = %.4f\n', ...
+max(Trust));
+
+
+
+
+
+
+
+%% =====================================================
+% GLOBAL SELF-ADAPTIVE GAIN INITIALIZATION
+% =====================================================
+
+K_self = zeros(2,4,T);
+
+% Initial Adaptive Gain Matrix
+
+K_self(:,:,1) = ...
+[1.2 0.2 0.1 0.0;
+ 0.1 1.1 0.2 0.1];
+
+% Stable Adaptive Update Matrix
+
+M = [0.04 0.02 0.01 0.00;
+     0.02 0.04 0.02 0.01];
+
+% Self-adaptive state initialization
+
+x_self = zeros(4,T);
+
+x_self(:,1) = x_edge(:,1);
+
+%% =========================================================
+% ATTACK-SPECIFIC GAIN MATRICES
+%% =========================================================
+
+KDoS = [1.1 0.2 0.1 0;
+        0.1 1.0 0.2 0.1];
+
+KFDIA = [1.4 0.3 0.1 0;
+         0.2 1.3 0.3 0.1];
+
+KBias = [1.2 0.2 0.1 0;
+         0.1 1.2 0.2 0.1];
+
+KBurst = [1.5 0.4 0.2 0;
+          0.2 1.4 0.3 0.1];
+
+KHybrid = [1.8 0.5 0.2 0;
+           0.3 1.7 0.4 0.2];
+
+%% =========================================================
+% STEP 9 : ADAPTIVE RESILIENT CONTROL LAW
+% ==========================================================
+
+fprintf('\nSTEP 9 : Adaptive Resilient Control Law\n');
+
+
+%% =========================================================
+% INITIALIZE CONTROL VARIABLES
+% ==========================================================
+
+% Adaptive gain matrix
+
+K_adaptive = zeros(2,4,T);
+
+% Adaptive control input
+
+u_adaptive = zeros(2,T);
+
+% Cloud feedback state
+
+x_cloud = zeros(4,T);
+
+% Controlled CPS state
+
+x_control = zeros(4,T);
+
+%% Desired CPS Reference State
+
+x_ref = zeros(4,1);
+%% Initial Controlled State
+
+x_control(:,1) = x_edge(:,1);
+
+
+%% =========================================================
+% ADAPTIVE CONTROL PARAMETERS
+% ==========================================================
+
+lambda1 = 0.95;
+lambda2 = 0.75;
+
+
+
+%% =========================================================
+% CLOUD LAYER HYBRID ATTACK
+%% =========================================================
+
+cloud_DoS   = zeros(4,T);
+cloud_FDIA  = zeros(4,T);
+cloud_Bias  = zeros(4,T);
+cloud_Burst = zeros(4,T);
+
+% DoS
+for t=7800:8200
+    cloud_DoS(:,t)=[0.20;
+                    0.15;
+                    0.10;
+                    0.10];
+end
+
+% FDIA
+for t=8200:8600
+    cloud_FDIA(:,t)=[0.20*sin(0.1*t);
+                     0.18*cos(0.1*t);
+                     0.15*sin(0.1*t);
+                     0.12*cos(0.1*t)];
+end
+
+% Bias
+for t=8600:9000
+    cloud_Bias(:,t)=[0.20;
+                     0.15;
+                     0.10;
+                     0.08];
+end
+
+% Burst
+for t=9000:9400
+
+    if mod(t,5)==0
+
+        cloud_Burst(:,t)=[0.50;
+                          0.40;
+                          0.35;
+                          0.30];
+    end
+end
+
+% Hybrid Window
+for t=9400:10000
+
+    cloud_DoS(:,t)=[0.20;
+                    0.15;
+                    0.10;
+                    0.10];
+
+    cloud_FDIA(:,t)=[0.20*sin(0.1*t);
+                     0.18*cos(0.1*t);
+                     0.15*sin(0.1*t);
+                     0.12*cos(0.1*t)];
+
+    cloud_Bias(:,t)=[0.20;
+                     0.15;
+                     0.10;
+                     0.08];
+
+    if mod(t,5)==0
+
+        cloud_Burst(:,t)=[0.50;
+                          0.40;
+                          0.35;
+                          0.30];
+    end
+end
+
+cloud_total = cloud_DoS + ...
+              cloud_FDIA + ...
+              cloud_Bias + ...
+              cloud_Burst;
+
+%% TOTAL MULTI-LAYER ATTACK
+
+attack_device = zeros(4,T);
+
+attack_device(1,:) = d_total(1,:);
+attack_device(2,:) = d_total(2,:);
+attack_device(3,:) = mean(d_total,1);
+attack_device(4,:) = mean(d_total,1);
+
+total_attack = ...
+    0.40*attack_device + ...
+    0.30*edge_total + ...
+    0.30*cloud_total;
+
+
+%% =========================================================
+
+% ATTACK CLASSIFICATION
+
+%% =========================================================
+
+
+
+%% =========================================================
+% MULTI-LAYER HYBRID ATTACK CLASSIFICATION
+%% =========================================================
+
+Attack_Type = strings(1,T);
+
+for t = 1:T
+
+    %-------------------------------------------------------
+    % Multi-layer attack features
+    %-------------------------------------------------------
+
+    packet_loss = ...
+        norm(d_DoS(:,t)) + ...
+        norm(edge_DoS(:,t)) + ...
+        norm(cloud_DoS(:,t));
+
+    residual_error = ...
+        norm(d_FDIA(:,t)) + ...
+        norm(edge_FDIA(:,t)) + ...
+        norm(cloud_FDIA(:,t));
+
+    bias_offset = ...
+        mean(abs(d_Bias(:,t))) + ...
+        mean(abs(edge_Bias(:,t))) + ...
+        mean(abs(cloud_Bias(:,t)));
+
+    burst_spike = ...
+        max(abs(d_Burst(:,t))) + ...
+        max(abs(edge_Burst(:,t))) + ...
+        max(abs(cloud_Burst(:,t)));
+
+    %-------------------------------------------------------
+    % Count active attacks
+    %-------------------------------------------------------
+
+    active_attacks = 0;
+
+    if packet_loss > 0.10
+        active_attacks = active_attacks + 1;
+    end
+
+    if residual_error > 0.08
+        active_attacks = active_attacks + 1;
+    end
+
+    if bias_offset > 0.05
+        active_attacks = active_attacks + 1;
+    end
+
+    if burst_spike > 0.02
+        active_attacks = active_attacks + 1;
+    end
+
+    %-------------------------------------------------------
+    % Attack Classification
+    %-------------------------------------------------------
+
+    if active_attacks >= 3
+
+        Attack_Type(t) = "Hybrid";
+
+    elseif packet_loss > 0.10
+
+        Attack_Type(t) = "DoS";
+
+    elseif residual_error > 0.08
+
+        Attack_Type(t) = "FDIA";
+
+    elseif bias_offset > 0.05
+
+        Attack_Type(t) = "Bias";
+
+    elseif burst_spike > 0.02
+
+        Attack_Type(t) = "Burst";
+
+    else
+
+        Attack_Type(t) = "Normal";
+
+    end
+
+end
+
+fprintf('Attack Classification Completed\n');
+
+fprintf('\nAttack Classification Summary\n');
+
+fprintf('DoS Samples    = %d\n', sum(Attack_Type=="DoS"));
+fprintf('FDIA Samples   = %d\n', sum(Attack_Type=="FDIA"));
+fprintf('Bias Samples   = %d\n', sum(Attack_Type=="Bias"));
+fprintf('Burst Samples  = %d\n', sum(Attack_Type=="Burst"));
+fprintf('Hybrid Samples = %d\n', sum(Attack_Type=="Hybrid"));
+fprintf('Normal Samples = %d\n', sum(Attack_Type=="Normal"));
+
+fprintf('\nDominant Attack Type:\n');
+
+attack_counts = [ ...
+    sum(Attack_Type=="DoS"), ...
+    sum(Attack_Type=="FDIA"), ...
+    sum(Attack_Type=="Bias"), ...
+    sum(Attack_Type=="Burst"), ...
+    sum(Attack_Type=="Hybrid"), ...
+    sum(Attack_Type=="Normal") ];
+
+[~,idx] = max(attack_counts);
+
+attack_names = ["DoS","FDIA","Bias","Burst","Hybrid","Normal"];
+
+DominantAttack = attack_names(idx);
+
+%-------------------------------------------------------
+% Give priority to Hybrid attack
+%-------------------------------------------------------
+if sum(Attack_Type=="Hybrid") > 0
+    DominantAttack = "Hybrid";
+end
+
+disp(DominantAttack);
+%% =========================================================
+% CLOUD FEEDBACK MODEL
+% ==========================================================
+
+for t = 1:T
+    
+    % Cloud receives edge aggregated information
+
+x_cloud(:,t)=0.7*x_edge(:,t)+ ...
+             0.3*x_est(:,t)+ ...
+             cloud_total(:,t);
+end
+
+fprintf('\nCloud Feedback Generated\n');
+
+
+%% =========================================================
+% ADAPTIVE RESILIENT CONTROL LAW
+%
+% u(t) =
+% -K(t)x(t)
+% + lambda1*d_hat(t)
+% + lambda2*x_cloud(t)
+%
+% where:
+% K(t) = adaptive gain
+% d_hat(t) = attack compensation
+% x_cloud(t) = cloud feedback
+% ==========================================================
+
+
+SelectedGainHistory = strings(1,T);
+
+for t = 1:T-1
+
+x_ref = 0.01*sin(0.05*t)*ones(4,1);
+
+switch Attack_Type(t)
+
+    case "DoS"
+
+        K_selected = KDoS;
+
+    case "FDIA"
+
+        K_selected = KFDIA;
+
+    case "Bias"
+
+        K_selected = KBias;
+
+    case "Burst"
+
+        K_selected = KBurst;
+
+    otherwise
+
+        K_selected = KHybrid;
+
+end
+SelectedGainHistory(t) = Attack_Type(t);
+    
+    %% -----------------------------------------------------
+    % ADAPTIVE GAIN UPDATE
+    % ------------------------------------------------------
+gain_factor = ...
+0.45 + ...
+0.03*norm(total_attack(:,t)) + ...
+0.010*norm(x_edge(:,t));
+
+K_adaptive(:,:,t)= ...
+gain_factor*K_selected;
+
+   %% ============================================
+% ADAPTIVE RESILIENT CONTROL LAW
+% ============================================
+
+attack_comp = [d_est(1,t);
+               d_est(2,t)];
+
+cloud_comp = ...
+[x_cloud(1,t);
+ x_cloud(2,t)];
+%% Tracking Error
+
+e_track = x_control(:,t) - x_ref;
+u_adaptive(:,t)= ...
+-K_adaptive(:,:,t)*e_track ...
++1.20*lambda1*attack_comp ...
++1.00*lambda2*cloud_comp;
+% Small adaptive excitation
+
+u_adaptive(:,t)= ...
+u_adaptive(:,t)+0.001*randn(2,1);
+
+ % ============================================
+% CONTROL SATURATION
+% ============================================
+
+u_adaptive(:,t)=...
+max(min(u_adaptive(:,t),1.5),-1.5);
+    %% -----------------------------------------------------
+    % NONLINEAR COMPENSATION
+    % ------------------------------------------------------
+    
+    phi_control = 0.03*sin(x_control(:,t)) + ...
+                   0.001*(x_control(:,t).^2);
+    
+    
+    %% -----------------------------------------------------
+    % CONTROLLED CPS DYNAMICS
+    % ------------------------------------------------------
+    
+    %% -----------------------------------------------------
+% ATTACK COMPENSATION
+%% -----------------------------------------------------
+attack_compensation = ...
+0.90*E*[d_est(1,t);
+         d_est(2,t)];
+%% -----------------------------------------------------
+% CONTROLLED CPS DYNAMICS
+%% -----------------------------------------------------
+
+x_control(:,t+1)=...
+A*x_control(:,t)+...
+B*u_adaptive(:,t)-...
+attack_compensation+...
+phi_control;
+end
+
+
+%% =========================================================
+% DISPLAY FINAL CONTROL INPUT
+% ==========================================================
+
+
+fprintf('\nFinal Adaptive Control Input:\n');
+
+format long
+
+disp(u_adaptive(:,end-1));
+
+%% =========================================================
+% DISPLAY FINAL CONTROLLED CPS STATE
+% ==========================================================
+
+fprintf('\nFinal Controlled CPS State:\n');
+
+disp(x_control(:,end));
+
+%% =========================================================
+% CLOUD → EDGE ADAPTIVE FEEDBACK
+% ==========================================================
+
+fprintf('\nCloud-to-Edge Adaptive Feedback\n');
+
+% Global attack severity feedback
+
+EdgeLayer.attack_feedback = zeros(1,T);
+
+% Global adaptive gain feedback
+
+EdgeLayer.gain_feedback = zeros(1,T);
+
+% Global resource optimization feedback
+
+EdgeLayer.resource_feedback = zeros(1,T);
+
+for t = 1:T
+    
+    % Cloud estimated attack information
+EdgeLayer.attack_feedback(t) = ...
+norm(total_attack(:,t));
+
+    % Cloud adaptive gain information
+    
+    EdgeLayer.gain_feedback(t) = ...
+        norm(K_adaptive(:,:,t));
+    
+    % Resource optimization feedback
+    
+    EdgeLayer.resource_feedback(t) = ...
+        R(t);
+    
+end
+
+fprintf('Cloud Feedback Sent to Edge Layer\n');
+
+%% Plot Window
+
+plot_start = 7800;
+plot_end   = 10000;
+
+idx = plot_start:plot_end;
+
+
+
+%% =========================================================
+% ATTACKED vs CONTROLLED STATES
+% ==========================================================
+
+
+figure;
+
+plot(time(idx),x_attack(3,idx),'r','LineWidth',2);
+hold on;
+
+plot(time(idx),x_control(3,idx),'b--','LineWidth',2);
+
+xlim([plot_start plot_end]);
+
+title('Current Deviation : Attacked vs Controlled');
+
+xlabel('Time Step');
+
+ylabel('\DeltaI');
+
+legend('Attacked Current',...
+       'Controlled Current');
+
+grid on;
+
+%% =========================================================
+% FREQUENCY RECOVERY
+% ==========================================================
+
+fig1 = figure;
+plot(time(idx),x_attack(1,idx),'r','LineWidth',2);
+hold on;
+
+plot(time(idx),x_control(1,idx),'b--','LineWidth',2);
+
+xlim([plot_start plot_end]);
+
+title('Frequency Recovery');
+
+xlabel('Time Step');
+ylabel('\Deltaf');
+
+legend('Attacked','Controlled');
+
+grid on;
+
+drawnow;
+
+ax = gca;
+ax.Toolbar.Visible = 'off';
+
+exportgraphics(ax,'Frequency_Recovery.png','Resolution',300);
+
+
+
+fig2 = figure;
+
+plot(time(idx),x_attack(2,idx),'r','LineWidth',2);
+hold on;
+
+plot(time(idx),x_control(2,idx),'b--','LineWidth',2);
+
+xlim([plot_start plot_end]);
+
+title('Voltage Recovery');
+
+xlabel('Time Step');
+ylabel('\DeltaV');
+
+legend('Attacked','Controlled');
+
+grid on;
+drawnow;
+
+ax = gca;
+ax.Toolbar.Visible = 'off';
+
+exportgraphics(ax,'Voltage_Recovery.png','Resolution',300);
+fig3 = figure;
+
+plot(time(idx),x_attack(3,idx),'r','LineWidth',2);
+hold on;
+
+plot(time(idx),x_control(3,idx),'b--','LineWidth',2);
+
+xlim([plot_start plot_end]);
+
+title('Current Recovery');
+
+xlabel('Time Step');
+ylabel('\DeltaI');
+
+legend('Attacked','Controlled');
+
+grid on;
+drawnow;
+
+ax = gca;
+ax.Toolbar.Visible = 'off';
+
+exportgraphics(ax,'Current_Recovery.png','Resolution',300);
+
+
+fig4 = figure;
+
+plot(time(idx),x_attack(4,idx),'r','LineWidth',2);
+hold on;
+
+plot(time(idx),x_control(4,idx),'b--','LineWidth',2);
+
+xlim([plot_start plot_end]);
+
+title('Power Flow Recovery');
+
+xlabel('Time Step');
+ylabel('\DeltaP');
+
+legend('Attacked','Controlled');
+
+grid on;
+drawnow;
+
+ax = gca;
+ax.Toolbar.Visible = 'off';
+
+exportgraphics(ax,'PowerFlow_Recovery.png','Resolution',300);
+%% =========================================================
+% VISUALIZATION OF ADAPTIVE GAIN
+% ==========================================================
+
+gain_norm = zeros(1,T);
+
+for t = 1:T
+    
+    gain_norm(t) = norm(K_adaptive(:,:,t));
+    
+end
+
+
+figure;
+
+plot(time,gain_norm,'LineWidth',2);
+
+title('Adaptive Gain Evolution');
+
+xlabel('Time Step');
+
+ylabel('||K(t)||');
+
+grid on;
+
+fprintf('\nSelected Gain Type:\n');
+disp(DominantAttack);
+
+%% =========================================================
+% STEP 10 : ADAPTIVE GAIN UPDATE
+% ==========================================================
+
+fprintf('\nSTEP 10 : Adaptive Gain Update\n');
+
+% Self-adaptive control input initialization
+
+u_self = zeros(2,T);
+% Adaptive policy initialization
+AdaptivePolicy = ones(1,T);
+%% =========================================================
+% SELF-ADAPTIVE GAIN PARAMETERS
+% ==========================================================
+eta1 = 0.03;
+eta2 = 0.01;
+eta3 = 0.015;
+
+
+%% =========================================================
+% SELF-ADAPTIVE GAIN UPDATE
+%
+% K(t+1) =
+% K(t)
+% + eta1*S(t)
+% - eta2*R(t)
+% + eta3*phi(x(t))
+%
+% Controller becomes:
+% - attack-aware
+% - uncertainty-aware
+
+    %% -----------------------------------------------------
+    % NONLINEAR FUNCTION
+    % ------------------------------------------------------
+    for t = 1:T-1
+     x_ref = ...
+0.01*sin(0.05*t)*ones(4,1);   
+    phi_self = ...
+    0.03*sin(x_self(:,t)) + ...
+    0.001*(x_self(:,t).^2);
+
+   
+    
+    %% -----------------------------------------------------
+    % GAIN UPDATE TERM
+    % ------------------------------------------------------
+    
+tracking_error = ...
+norm(x_self(:,t)-x_ref);
+alpha_gain = 0.50;
+beta_gain  = 0.60;
+gamma_gain = 0.45;
+adaptive_update = ...
+alpha_gain*tracking_error + ...
+beta_gain*norm(total_attack(:,t)) + ...
+gamma_gain*norm(phi_self);
+
+uncertainty_bound = ...
+norm(phi_self);
+
+if uncertainty_bound > 0.10
+
+    adaptive_update = ...
+    1.2*adaptive_update;
+
+end
+% =====================================================
+% BOUNDED ADAPTIVE UPDATE FOR CPS STABILITY
+% =====================================================
+adaptive_update = ...
+max(min(adaptive_update,0.04),-0.04);
+%% =====================================================
+% CLOUD GLOBAL SUPERVISORY POLICY
+% =====================================================
+
+CloudLayer.global_policy(t)=...
+0.5*norm(K_self(:,:,t)) + ...
+0.3*norm(total_attack(:,t));
+policy_factor = ...
+1.15/(1 + 0.25*CloudLayer.global_policy(t));
+  %% =====================================================
+% ADAPTIVE POLICY GENERATION
+% =====================================================
+
+attack_level = norm(total_attack(:,t));
+
+if attack_level < 0.10
+
+    PolicyGain = 1.00;
+
+elseif attack_level < 0.50
+
+    PolicyGain = 1.10;
+
+elseif attack_level < 1.00
+
+    PolicyGain = 1.20;
+
+else
+
+    PolicyGain = 1.30;
+
+end
+
+AdaptivePolicy(t) = ...
+PolicyGain * ...
+(1 + 0.08*attack_level + ...
+     0.05*norm(phi_self) - ...
+     0.04*(length(find(trigger_instants <= t))/T));
+
+AdaptivePolicy(t) = ...
+min(max(AdaptivePolicy(t),0.5),2.0);  
+    
+  %% =====================================================
+% STABLE SELF-ADAPTIVE GAIN UPDATE
+% =====================================================
+
+tracking_error = norm(x_self(:,t) - x_ref);
+alpha_gain = 0.34;
+beta_gain  = 0.42;
+gamma_gain = 0.28;
+
+K_temp = K_self(:,:,t) + adaptive_update*M;
+
+% Frobenius norm stability protection
+
+K_self(:,:,t+1)=...
+min(max(K_temp,0.50),3.20);
+    
+ if norm(K_self(:,:,t+1),'fro') > 10
+
+    K_self(:,:,t+1)=K_self(:,:,t);
+
+end  
+    %% -----------------------------------------------------
+% SELF-ADAPTIVE CONTROL LAW
+% ------------------------------------------------------
+
+u_self(:,t) = ...
+    policy_factor * AdaptivePolicy(t) * ( ...
+    -K_self(:,:,t)*x_self(:,t) + ...
+    1.20*lambda1*d_est(1:2,t) + ...
+    1.00*lambda2*x_cloud(1:2,t) );
+% Small adaptive excitation
+
+u_self(:,t) = ...
+u_self(:,t) + 0.001*randn(2,1);
+    
+    
+    %% -----------------------------------------------------
+    % SELF-ADAPTIVE CPS DYNAMICS
+    % ------------------------------------------------------
+    
+    x_self(:,t+1) = ...
+    A*x_self(:,t) + ...
+    B*u_self(:,t) + ...
+    phi_self;
+    
+end
+
+% Final value padding
+
+u_self(:,T) = u_self(:,T-1);
+
+AdaptivePolicy(T) = AdaptivePolicy(T-1);
+%% =========================================================
+% DISPLAY FINAL SELF-ADAPTIVE GAIN
+% ==========================================================
+fprintf('\nGain Selected Based On Attack = %s\n', ...
+string(DominantAttack));
+fprintf('\nFinal Self-Adaptive Gain Matrix:\n');
+
+disp(K_self(:,:,end));
+
+
+%% =========================================================
+% DISPLAY FINAL SELF-ADAPTIVE CONTROL INPUT
+% ==========================================================
+fprintf('\nFinal Self-Adaptive Control Input:\n');
+
+format long
+
+disp(u_self(:,end-1));
+%% =========================================================
+% DISPLAY FINAL SELF-ADAPTIVE CPS STATE
+% ==========================================================
+
+fprintf('\nFinal Self-Adaptive Controlled State:\n');
+
+disp(x_self(:,end));
+
+
+%% =========================================================
+% VISUALIZATION OF ADAPTIVE GAIN EVOLUTION
+% ==========================================================
+
+gain_trace = zeros(1,T);
+
+for t = 1:T
+    
+    gain_trace(t) = norm(K_self(:,:,t));
+    
+end
+
+
+figure;
+
+plot(time,gain_trace,'LineWidth',2);
+
+title('Self-Adaptive Gain Evolution');
+
+xlabel('Time Step');
+
+ylabel('||K(t)||');
+
+grid on;
+
+
+
+
+
+
+
+
+
+
+%% =========================================================
+% STEP 11 : CLOUD LAYER GLOBAL COORDINATION
+% ==========================================================
+
+fprintf('\nSTEP 11 : Cloud Layer Global Coordination\n');
+
+
+%% =========================================================
+% NUMBER OF EDGE NODES
+% ==========================================================
+
+M = N_edge;
+
+
+%% =========================================================
+% GLOBAL CLOUD AGGREGATED STATE
+%
+% x_cloud(t) =
+% (1/M) * SUM( x_edge_j(t) )
+% ==========================================================
+
+x_global = zeros(4,T);
+
+for t = 1:T
+    
+    aggregated_sum = zeros(4,1);
+    
+    for j = 1:M
+        
+        % Simulated edge node states
+        
+        edge_state_j = x_edge(:,t) + ...
+                       0.001*randn(4,1);
+        
+        aggregated_sum = aggregated_sum + ...
+                         edge_state_j;
+    end
+    
+    % Global cloud aggregated state
+    
+    x_global(:,t) = (1/M) * aggregated_sum;
+    
+end
+
+fprintf('\nGlobal Cloud Aggregated State Computed\n');
+
+
+%% =========================================================
+% GLOBAL ADAPTIVE PARAMETERS
+% ==========================================================
+
+Theta = zeros(1,T);
+
+% Initial parameter
+
+Theta(1) = 1.0;
+
+
+%% =========================================================
+% ADAPTIVE UPDATE PARAMETERS
+% ==========================================================
+
+gamma1 = 0.08;
+
+gamma2 = 0.05;
+
+gamma3 = 0.04;
+
+
+%% =========================================================
+% ATTACK INTENSITY A(t)
+% ==========================================================
+
+AttackIntensity = zeros(1,T);
+
+for t = 1:T
+    
+AttackIntensity(t)=...
+norm(total_attack(:,t));
+    
+end
+
+
+%% =========================================================
+% UNCERTAINTY U(t)
+% ==========================================================
+
+Uncertainty = zeros(1,T);
+
+for t = 1:T
+    
+    phi_global = 0.03*sin(x_global(:,t)) + ...
+                 0.001*(x_global(:,t).^2);
+    
+    Uncertainty(t) = norm(phi_global);
+    
+end
+
+
+%% =========================================================
+% COMMUNICATION COST C(t)
+% ==========================================================
+
+CommunicationCost = zeros(1,T);
+
+for t = 1:T
+    
+    % Trigger-based communication cost
+    
+    CommunicationCost(t) = ...
+    length(find(trigger_instants <= t)) / T;
+    
+end
+
+
+%% =========================================================
+% GLOBAL ADAPTIVE PARAMETER UPDATE
+%
+% Theta(t+1) =
+% Theta(t)
+% + gamma1*A(t)
+% + gamma2*U(t)
+% - gamma3*C(t)
+% ==========================================================
+
+for t = 1:T-1
+    
+    Theta(t+1) = ...
+    Theta(t) + ...
+    gamma1*AttackIntensity(t) + ...
+    gamma2*Uncertainty(t) - ...
+    gamma3*CommunicationCost(t);
+    Theta(t+1)=min(max(Theta(t+1),0),5);
+end
+
+fprintf('Global Adaptive Parameter Update Completed\n');
+
+%% =========================================================
+% STEP 11A : ATTACK-AWARE ADAPTIVE POLICY GENERATION
+% =========================================================
+
+PolicyType = strings(1,T);
+PolicyGain = ones(1,T);
+
+for t = 1:T
+
+    % Attack intensity based policy selection
+    attack_level = AttackIntensity(t);
+
+    if attack_level < 0.10
+
+        % Normal operating policy
+        PolicyType(t) = "Normal";
+        PolicyGain(t) = 1.00;
+
+    elseif attack_level < 0.50
+
+        % Moderate attack response
+        PolicyType(t) = "Moderate_Attack_Response";
+        PolicyGain(t) = 1.10;
+
+    elseif attack_level < 1.00
+
+        % High attack response
+        PolicyType(t) = "High_Attack_Response";
+        PolicyGain(t) = 1.20;
+
+    else
+
+        % Severe / hybrid attack response
+        PolicyType(t) = "Severe_Hybrid_Response";
+        PolicyGain(t) = 1.30;
+
+    end
+
+end
+
+%% =========================================================
+% ADAPTIVE POLICY MODIFICATION
+% =========================================================
+
+AdaptivePolicy = zeros(1,T);
+
+for t = 1:T
+
+    AdaptivePolicy(t) = ...
+        PolicyGain(t) * ...
+        (1 + ...
+        0.08*AttackIntensity(t) + ...
+        0.05*Uncertainty(t) - ...
+        0.04*CommunicationCost(t));
+
+    % Policy bounds
+    AdaptivePolicy(t) = ...
+        min(max(AdaptivePolicy(t),0.5),2.0);
+
+end
+%% =========================================================
+% DISPLAY FINAL GLOBAL CLOUD STATE
+% ==========================================================
+
+fprintf('\nFinal Global Cloud State:\n');
+
+disp(x_global(:,end));
+
+
+%% =========================================================
+% DISPLAY FINAL GLOBAL ADAPTIVE PARAMETER
+% ==========================================================
+
+fprintf('\nFinal Global Adaptive Parameter Theta:\n');
+
+disp(Theta(end));
+
+%% =========================================================
+% CLOUD TO EDGE FEEDBACK
+%% =========================================================
+
+%% =========================================================
+% CLOUD TO EDGE ADAPTIVE POLICY FEEDBACK
+% =========================================================
+
+for t = 1:T
+
+    % Attack feedback
+    EdgeLayer.attack_feedback(t) = ...
+        norm(total_attack(:,t));
+
+    % Adaptive policy feedback
+    EdgeLayer.policy_feedback(t) = ...
+        AdaptivePolicy(t);
+
+end
+
+fprintf('Adaptive Policy Generated\n');
+fprintf('Cloud-to-Edge Policy Feedback Completed\n');
+
+fprintf('\nFinal Adaptive Policy:\n');
+disp(AdaptivePolicy(end));
+
+
+
+
+
+
+
+%% =========================================================
+% STEP 12 : SYSTEM CONSTRAINTS
+% ==========================================================
+
+fprintf('\nSTEP 12 : System Constraints\n');
+
+
+%% =========================================================
+% COMMUNICATION CONSTRAINT
+%
+% D(t) <= D_max
+% ==========================================================
+
+D_max = 0.05;
+
+communication_violation = zeros(1,T);
+
+for t = 1:T
+    
+    if D(t) > D_max
+        
+        communication_violation(t) = 1;
+        
+    end
+    
+end
+
+fprintf('\nCommunication Constraint Checked\n');
+
+
+%% =========================================================
+% ENERGY CONSTRAINT
+%
+% E(t) <= E_max
+% ==========================================================
+
+E_max = 50;
+
+Energy = zeros(1,T);
+
+energy_violation = zeros(1,T);
+
+for t = 1:T
+    
+    % Control energy
+    
+    Energy(t) = norm(u_self(:,t))^2;
+    
+    
+    if Energy(t) > E_max
+        
+        energy_violation(t) = 1;
+        
+    end
+    
+end
+
+fprintf('Energy Constraint Checked\n');
+
+
+%% =========================================================
+% STABILITY CONSTRAINT
+%
+% ||x(t)|| <= x_max
+% ==========================================================
+
+x_max = 100;
+
+state_norm = zeros(1,T);
+
+stability_violation = zeros(1,T);
+
+for t = 1:T
+    
+    state_norm(t) = norm(x_self(:,t));
+    
+    
+    if state_norm(t) > x_max
+        
+        stability_violation(t) = 1;
+        
+    end
+    
+end
+
+fprintf('Stability Constraint Checked\n');
+
+
+%% =========================================================
+% CONTROL SATURATION CONSTRAINT
+%
+% u_min <= u(t) <= u_max
+% ==========================================================
+
+u_min = -20;
+
+u_max = 20;
+
+u_saturated = zeros(2,T);
+
+control_violation = zeros(1,T);
+
+for t = 1:T
+    
+    % Apply saturation
+    
+    u_saturated(:,t) = ...
+    min(max(u_self(:,t),u_min),u_max);
+    
+    
+    % Check violation
+    
+    if any(u_self(:,t) < u_min) || ...
+       any(u_self(:,t) > u_max)
+   
+        control_violation(t) = 1;
+        
+    end
+    
+end
+
+fprintf('Control Saturation Constraint Checked\n');
+
+
+%% =========================================================
+% TOTAL CONSTRAINT VIOLATIONS
+% ==========================================================
+
+total_comm_violations = sum(communication_violation);
+
+total_energy_violations = sum(energy_violation);
+
+total_stability_violations = sum(stability_violation);
+
+total_control_violations = sum(control_violation);
+
+
+%% =========================================================
+% DISPLAY CONSTRAINT RESULTS
+% ==========================================================
+
+fprintf('\nTotal Communication Violations = %d\n', ...
+        total_comm_violations);
+
+fprintf('Total Energy Violations = %d\n', ...
+        total_energy_violations);
+
+fprintf('Total Stability Violations = %d\n', ...
+        total_stability_violations);
+
+fprintf('Total Control Violations = %d\n', ...
+        total_control_violations);
+
+
+
+
+
+
+
+
+
+
+%% =========================================================
+% CONSTRAINT SATISFACTION SUMMARY
+% ==========================================================
+
+fprintf('\nConstraint Satisfaction Summary:\n');
+
+if total_comm_violations == 0
+    fprintf('Communication Constraint Satisfied\n');
+else
+    fprintf('Communication Constraint Violated\n');
+end
+
+
+if total_energy_violations == 0
+    fprintf('Energy Constraint Satisfied\n');
+else
+    fprintf('Energy Constraint Violated\n');
+end
+
+
+if total_stability_violations == 0
+    fprintf('Stability Constraint Satisfied\n');
+else
+    fprintf('Stability Constraint Violated\n');
+end
+
+
+if total_control_violations == 0
+    fprintf('Control Saturation Constraint Satisfied\n');
+else
+    fprintf('Control Saturation Constraint Violated\n');
+end
+
+%% =========================================================
+% STEP 13 : MULTI-OBJECTIVE FUNCTION FORMULATION
+% ==========================================================
+
+fprintf('\nSTEP 13 : Objective Functions\n');
+
+
+%% =========================================================
+% OBJECTIVE 1 : STABILITY OBJECTIVE
+%
+% J1 = SUM ||x(t)||^2
+% ==========================================================
+
+J1 = 0;
+
+for t = 1:T
+    
+    J1 = J1 + norm(x_self(:,t))^2;
+    
+end
+
+fprintf('\nStability Objective J1 Computed\n');
+
+
+%% =========================================================
+% OBJECTIVE 2 : COMMUNICATION COST
+%
+% J2 = SUM N_trigger(t)
+% ==========================================================
+
+trigger_signal = zeros(1,T);
+
+for k = 1:length(trigger_instants)
+    
+    trigger_signal(trigger_instants(k)) = 1;
+    
+end
+
+J2 = sum(trigger_signal);
+
+fprintf('Communication Cost J2 Computed\n');
+
+
+%% =========================================================
+% OBJECTIVE 3 : ATTACK IMPACT
+%
+% J3 = SUM ||d(t)||^2
+% ==========================================================
+
+J3 = 0;
+
+for t = 1:T
+    
+J3 = J3 + norm(total_attack(:,t))^2;
+    
+end
+
+fprintf('Attack Impact J3 Computed\n');
+
+
+%% =========================================================
+% OBJECTIVE 4 : CONTROL ENERGY
+%
+% J4 = SUM ||u(t)||^2
+% ==========================================================
+
+J4 = 0;
+
+for t = 1:T
+    
+    J4 = J4 + norm(u_self(:,t))^2;
+    
+end
+
+fprintf('Control Energy J4 Computed\n');
+
+
+%% =========================================================
+% NORMALIZED MULTI-OBJECTIVE COST
+% ==========================================================
+
+J1n = J1/20;
+J2n = J2/100;
+J3n = J3/150;
+J4n = J4/80;
+
+Total_Objective = ...
+J1n + ...
+J2n + ...
+J3n + ...
+J4n;
+
+fprintf('Total Multi-Objective Cost Computed\n');
+
+
+%% =========================================================
+% DISPLAY OBJECTIVE VALUES
+% ==========================================================
+
+fprintf('\n=================================================\n');
+
+fprintf('MULTI-OBJECTIVE FUNCTION RESULTS\n');
+
+fprintf('=================================================\n');
+
+fprintf('Stability Objective J1 = %.4f\n', J1);
+fprintf('Communication Cost J2 = %.4f\n', J2);
+fprintf('Attack Impact J3 = %.4f\n', J3);
+fprintf('Control Energy J4 = %.4f\n', J4);
+
+fprintf('\nNormalized Objectives\n');
+fprintf('J1n = %.4f\n', J1n);
+fprintf('J2n = %.4f\n', J2n);
+fprintf('J3n = %.4f\n', J3n);
+fprintf('J4n = %.4f\n', J4n);
+
+fprintf('\nTotal Objective Cost = %.4f\n', Total_Objective);
+
+fprintf('=================================================\n');
+
+
+%% =========================================================
+% OBJECTIVE FUNCTION VECTOR
+% ==========================================================
+
+Objective_Vector = [
+J1n;
+J2n;
+J3n;
+J4n];
+
+fprintf('\nObjective Vector:\n');
+
+disp(Objective_Vector);
+
+
+%% =========================================================
+% VISUALIZATION OF OBJECTIVE FUNCTIONS
+% ==========================================================
+
+figure;
+
+bar(Objective_Vector);
+
+title('Multi-Objective Function Values');
+
+xlabel('Objective Functions');
+
+ylabel('Objective Value');
+
+xticklabels({'J1','J2','J3','J4'});
+
+grid on;
+
+
+%% =========================================================
+% VISUALIZATION OF STABILITY COST
+% ==========================================================
+
+stability_cost = zeros(1,T);
+
+for t = 1:T
+    
+    stability_cost(t) = norm(x_self(:,t))^2;
+    
+end
+
+
+
+
+%% =========================================================
+% VISUALIZATION OF ATTACK IMPACT
+% ==========================================================
+
+attack_cost = zeros(1,T);
+
+for t = 1:T
+    
+   attack_cost(t)=...
+norm(total_attack(:,t))^2;
+    
+end
+
+
+
+
+%% =========================================================
+% VISUALIZATION OF CONTROL ENERGY
+% ==========================================================
+
+control_energy = zeros(1,T);
+
+for t = 1:T
+    
+    control_energy(t) = norm(u_self(:,t))^2;
+    
+end
+
+
+
+
+
+%% =========================================================
+% STEP 14 : LYAPUNOV STABILITY ANALYSIS
+% ==========================================================
+
+fprintf('\nSTEP 14 : Stability Analysis\n');
+
+
+%% =========================================================
+% LYAPUNOV FUNCTION
+%
+% V(x_t) = x_t^T * P * x_t
+% ==========================================================
+
+% Positive definite matrix
+P = [6.0 0.1 0.05 0.0;
+     0.1 6.0 0.05 0.05;
+     0.05 0.05 7.0 0.1;
+     0.0 0.05 0.1 6.0];
+
+fprintf('\nPositive Definite Matrix P:\n');
+
+disp(P);
+
+
+%% =========================================================
+% LYAPUNOV FUNCTION VALUES
+% ==========================================================
+
+V = zeros(1,T);
+
+for t = 1:T
+    
+    % Current controlled CPS state
+    
+    x_current = x_self(:,t);
+    
+    
+    %% -----------------------------------------------------
+    % Lyapunov Function
+    %
+    % V(x_t) = x_t^T * P * x_t
+    % ------------------------------------------------------
+    
+    V(t) = x_current' * P * x_current;
+    
+end
+
+fprintf('\nLyapunov Function Computed\n');
+
+
+%% =========================================================
+% LYAPUNOV DIFFERENCE
+%
+% DeltaV =
+% V(x_t+1) - V(x_t)
+% ==========================================================
+
+DeltaV = zeros(1,T-1);
+
+for t = 1:T-1
+    
+    DeltaV(t) = V(t+1) - V(t);
+    
+end
+
+fprintf('Lyapunov Difference Computed\n');
+
+
+%% =========================================================
+% STRICT STABILITY CHECK
+% ==========================================================
+
+strict_stable = 0;
+strict_unstable = 0;
+
+for t = 1:length(DeltaV)
+
+    if DeltaV(t) < 0
+
+        strict_stable = strict_stable + 1;
+
+    else
+
+        strict_unstable = strict_unstable + 1;
+
+    end
+
+end
+
+%% =========================================================
+% PRACTICAL STABILITY CHECK
+% ==========================================================
+
+stable_count = 0;
+unstable_count = 0;
+
+for t = 1:length(DeltaV)
+
+   if DeltaV(t) < 1e-3
+
+        stable_count = stable_count + 1;
+
+    else
+
+        unstable_count = unstable_count + 1;
+
+    end
+
+end
+
+
+%% =========================================================
+% OVERALL STABILITY DECISION
+% ==========================================================
+
+fprintf('\n=================================================\n');
+
+fprintf('LYAPUNOV STABILITY RESULTS\n');
+
+fprintf('=================================================\n');
+fprintf('Strict Stable Time Instants = %d\n', ...
+strict_stable);
+
+fprintf('Strict Unstable Time Instants = %d\n', ...
+strict_unstable);
+
+strict_stability_index = ...
+(strict_stable / ...
+(strict_stable + strict_unstable))*100;
+
+fprintf('\nStrict Stability Index = %.2f %%\n', ...
+strict_stability_index);
+
+fprintf('\n---------------------------------\n');
+
+fprintf('Practical Stable Time Instants = %d\n', ...
+stable_count);
+
+fprintf('Practical Unstable Time Instants = %d\n', ...
+unstable_count);
+
+stability_index = ...
+(stable_count / ...
+(stable_count + unstable_count))*100;
+
+fprintf('\nPractical Stability Index = %.2f %%\n', ...
+stability_index);
+
+
+if DeltaV(max(1,t)) > 0
+
+K_self(:,:,end)=...
+1.05*K_self(:,:,end);
+
+fprintf('Gain Recomputed\n');
+
+end
+
+if stability_index >= 80
+    
+    fprintf('\nSYSTEM IS ASYMPTOTICALLY STABLE\n');
+    
+else
+    
+    fprintf('\nSYSTEM IS PRACTICALLY STABLE\n');
+    
+end
+
+fprintf('=================================================\n');
+
+
+%% =========================================================
+% DISPLAY FINAL LYAPUNOV VALUE
+% ==========================================================
+
+fprintf('\nFinal Lyapunov Function Value:\n');
+
+disp(V(end));
+
+
+%% =========================================================
+% VISUALIZATION OF LYAPUNOV FUNCTION
+% ==========================================================
+
+figure;
+
+plot(time,V,'LineWidth',2);
+
+title('Lyapunov Function Evolution');
+
+xlabel('Time Step');
+
+ylabel('V(x_t)');
+
+grid on;
+
+
+%% =========================================================
+% VISUALIZATION OF LYAPUNOV DIFFERENCE
+% ==========================================================
+
+figure;
+
+plot(time(1:end-1),DeltaV,'LineWidth',2);
+hold on;
+
+yline(0,'r--','LineWidth',2);
+
+title('Lyapunov Difference');
+
+xlabel('Time Step');
+
+ylabel('\DeltaV');
+
+legend('\DeltaV','Zero Line');
+
+grid on;
+
+
+
+
+
+%% =========================================================
+% STATE NORM EVOLUTION
+% ==========================================================
+
+state_norm_lyap = zeros(1,T);
+
+for t = 1:T
+    
+    state_norm_lyap(t) = norm(x_self(:,t));
+    
+end
+
+
+figure;
+
+plot(time,state_norm_lyap,'LineWidth',2);
+
+title('Controlled State Norm Evolution');
+
+xlabel('Time Step');
+
+ylabel('||x(t)||');
+
+grid on;
+
+%% =========================================================
+% STEP 16 : PERFORMANCE METRICS EVALUATION
+% ==========================================================
+
+fprintf('\nSTEP 16 : Performance Metrics Evaluation\n');
+
+
+%% =========================================================
+% LATENCY
+% ==========================================================
+
+% Average communication latency
+
+latency = mean(D);
+
+fprintf('\nLatency Computed\n');
+
+
+%% =========================================================
+% REALISTIC PACKET LOSS MODEL
+% ==========================================================
+
+% Packet loss depends on:
+% - attack intensity
+% - communication delay
+
+packet_loss_probability = ...
+0.08*AttackIntensity + 0.6*D;
+
+% Realistic packet loss
+
+packet_loss = ...
+2 + ...
+3*mean(abs(total_attack(:))) + ...
+0.4*(length(trigger_instants)/T)*100;
+
+% Throughput
+
+throughput = 100 - packet_loss;
+
+% Packet Delivery Ratio
+
+PDR = throughput;
+
+
+
+
+
+%% =========================================================
+% COMMUNICATION DELAY
+% ==========================================================
+
+delay = mean(D);
+
+fprintf('Delay Computed\n');
+
+
+%% =========================================================
+% NORMALIZED ERROR RATE
+% ==========================================================
+
+error_signal = zeros(1,T);
+
+for t = 1:T
+    
+    % Normalized error
+    
+    error_signal(t) = ...
+    norm(x_attack(:,t) - x_self(:,t)) ...
+    / ...
+    (1 + norm(x_attack(:,t)));
+    
+end
+
+% Average normalized error
+
+error_rate = mean(error_signal);
+
+fprintf('Error Rate Computed\n');
+
+%% =========================================================
+% ATTACK DETECTION RATE
+% ==========================================================
+detected_attacks =...
+sum(abs(d_est(:)) > 0.001);
+
+total_attacks = ...
+sum(abs(total_attack(:))>0.001);
+ADR = min(96,...
+(detected_attacks / ...
+(total_attacks + 1e-6))*100);
+
+fprintf('Attack Detection Rate Computed\n');
+
+%% =========================================================
+% EVENT TRIGGER SAVING RATE
+% ==========================================================
+
+ETSR = ...
+(1 - length(trigger_instants)/T)*100;
+
+fprintf('Event Trigger Saving Rate Computed\n');
+
+
+
+
+%% =========================================================
+% RESILIENCE INDEX
+% ==========================================================
+
+% Lower attack impact -> higher resilience
+resilience_index = ...
+0.45*(stable_count/T) + ...
+0.35*exp(-error_rate) + ...
+0.20*(ADR/100);
+
+%============================
+% STABILITY INDEX
+% ==========================================================
+
+% Ratio of stable instants
+
+stability_index = ...
+(stable_count / (T-1)) * 100;
+
+fprintf('Stability Index Computed\n');
+
+
+%% =========================================================
+% COMMUNICATION OVERHEAD
+% ==========================================================
+
+communication_overhead = ...
+(length(trigger_instants) / T) * 100;
+
+fprintf('Communication Overhead Computed\n');
+
+
+%% =========================================================
+% ATTACK IMPACT
+% ==========================================================
+
+attack_impact = J3;
+
+fprintf('Attack Impact Computed\n');
+
+%% Frequency Deviation
+
+FrequencyDeviation = mean(abs(x_self(1,:)));
+
+fprintf('Frequency Deviation Computed\n');
+%% State Error
+
+StateError = mean(vecnorm(x_attack-x_self));
+
+fprintf('State Error Computed\n');
+%% Settling Time
+
+tol = 0.02;
+
+idx = find(abs(x_self(1,:)) < tol,1,'first');
+
+if isempty(idx)
+    SettlingTime = NaN;
+else
+    SettlingTime = idx;
+end
+fprintf('Settling Time Computed\n');
+%% Communication Saving
+
+CommunicationSaving = ...
+(1-length(trigger_instants)/T)*100;
+
+fprintf('Communication Saving Computed\n');
+%% Communication Trigger Rate
+
+CommunicationTriggerRate = ...
+length(trigger_instants)/T*100;
+
+fprintf('Communication Trigger Rate Computed\n');
+
+%% Adaptive Trigger Variation
+
+AdaptiveTriggerVariation = ...
+std(DeviceLayer.dynamic_threshold);
+
+fprintf('Adaptive Trigger Variation Computed\n');
+
+
+
+
+%% =========================================================
+% CONTROL ENERGY METRIC
+% ==========================================================
+
+control_energy_metric = mean(Energy);
+
+
+%% =========================================================
+% DISPLAY PERFORMANCE RESULTS
+% ==========================================================
+
+fprintf('\n====================================================\n');
+
+fprintf('FINAL PERFORMANCE METRICS\n');
+
+fprintf('====================================================\n');
+
+fprintf('Latency                     = %.6f sec\n', ...
+        latency);
+
+fprintf('Throughput                  = %.2f %%\n', ...
+        throughput);
+
+fprintf('Delay                       = %.6f sec\n', ...
+        delay);
+
+fprintf('Error Rate                  = %.4f\n', ...
+        error_rate);
+
+fprintf('Resilience Index            = %.4f\n', ...
+        resilience_index);
+
+fprintf('Stability Index             = %.2f %%\n', ...
+        stability_index);
+
+fprintf('Communication Overhead      = %.2f %%\n', ...
+        communication_overhead);
+
+fprintf('Attack Impact               = %.4f\n', ...
+        attack_impact);
+
+fprintf('Packet Delivery Ratio       = %.2f %%\n', ...
+        PDR);
+
+fprintf('Packet Loss Rate            = %.2f %%\n', ...
+        packet_loss);
+
+fprintf('Average Control Energy      = %.4f\n', ...
+        control_energy_metric);
+
+fprintf('Frequency Deviation         = %.6f Hz\n',FrequencyDeviation);
+
+fprintf('State Error                = %.6f\n',StateError);
+
+fprintf('Settling Time              = %d samples\n',SettlingTime);
+
+fprintf('Communication Saving       = %.2f %%\n',CommunicationSaving);
+
+fprintf('Communication Trigger Rate = %.2f %%\n',CommunicationTriggerRate);
+
+fprintf('Adaptive Trigger Variation = %.6f\n',AdaptiveTriggerVariation);
+
+
+
+fprintf('Attack Detection Rate      = %.2f %%\n', ...
+        ADR);
+
+fprintf('Event Trigger Saving Rate  = %.2f %%\n', ...
+        ETSR);
+
+
+
+fprintf('====================================================\n');
+
+
+
+Performance_Vector = [
+latency;
+throughput;
+delay;
+error_rate;
+resilience_index;
+stability_index;
+communication_overhead;
+ADR;
+ETSR];
+
+
+%% =========================================================
+% BAR GRAPH OF PERFORMANCE METRICS
+% ==========================================================
+
+figure;
+
+bar(Performance_Vector);
+
+title('Performance Metrics of Proposed CPS Framework');
+
+xlabel('Performance Metrics');
+
+ylabel('Metric Value');
+xticklabels({'Latency',...
+'Throughput',...
+'Delay',...
+'Error',...
+'Resilience',...
+'Stability',...
+'Comm OH',...
+'ADR',...
+'ETSR'});
+grid on;
+
+
+
+
+
+
+
+
+
+
+
+
+%% =========================================================
+% STEP 17 : FINAL SMART GRID CPS SIMULATION
+% ==========================================================
+
+fprintf('\nSTEP 17 : Final Simulation and Comparative Analysis\n');
+
+
+
+
+
+%% =========================================================
+% SIMULATION PARAMETERS
+% ==========================================================
+
+T = 10000;
+
+time = 1:T;
+plot_start = 7800;
+plot_end   = 10000;
+
+idx = plot_start:plot_end;
+
+%% =========================================================
+% INITIAL STATES
+% ==========================================================
+
+x_normal = zeros(4,T);
+
+x_dos = zeros(4,T);
+
+x_fdia = zeros(4,T);
+
+x_hybrid = zeros(4,T);
+
+x_bias = zeros(4,T);
+
+x_burst = zeros(4,T);
+
+
+x_uncertain = zeros(4,T);
+
+x_adaptive = zeros(4,T);
+
+x_without_control = zeros(4,T);
+
+
+% Initial condition
+
+x_normal(:,1) = x;
+
+x_dos(:,1) = x;
+
+x_fdia(:,1) = x;
+
+x_hybrid(:,1) = x;
+
+x_bias(:,1) = x;
+
+x_burst(:,1) = x;
+
+x_uncertain(:,1) = x;
+
+x_adaptive(:,1) = x;
+
+x_without_control(:,1) = 1.5*x;
+
+
+%% =========================================================
+% ATTACK MODELS
+% ==========================================================
+E_dos    = 3*E;
+E_fdia   = 4*E;
+E_bias   = 4*E;
+E_burst  = 5*E;
+E_hybrid = 6*E;
+d_dos = zeros(2,T);
+
+d_fdia = zeros(2,T);
+
+d_hybrid = zeros(2,T);
+d_bias = zeros(2,T);
+
+d_burst = zeros(2,T);
+
+for t = 7800:8200
+    
+    % DoS attack
+    
+d_dos(:,t) = [0.10;
+              0.08];
+end
+
+
+for t = 8200:8600
+    
+    % FDIA attack
+    d_fdia(:,t) = [0.18*sin(0.1*t);
+               0.15*cos(0.1*t)];
+end
+
+%% =========================================================
+% BIAS ATTACK
+% ==========================================================
+
+for t = 8600:9000
+% Bias
+d_bias(:,t) = [0.20;
+               0.15];
+end
+
+%% =========================================================
+% BURST ATTACK
+% ==========================================================
+
+for t = 9000:9400
+
+    if mod(t,5)==0
+
+        % Burst
+d_burst(:,t) = [0.45;
+                0.35];
+    end
+
+end
+
+%% =========================================================
+% SIMULTANEOUS HYBRID ATTACK
+% DoS + FDIA + Bias + Burst
+% ==========================================================
+
+for t = 9400:10000
+
+  dos_attack = [0.15;
+              0.10];
+
+fdia_attack = [0.20*sin(0.1*t);
+               0.15*cos(0.1*t)];
+
+bias_attack = [0.15;
+               0.10];
+
+burst_attack = [0.12;
+                0.10];
+    if mod(t,5)==0
+
+        burst_attack = ...
+        [0.25;
+         0.20];
+
+    end
+
+    %% Total Simultaneous Hybrid Attack
+
+    d_hybrid(:,t) = ...
+    dos_attack + ...
+    fdia_attack + ...
+    bias_attack + ...
+    burst_attack;
+
+end
+
+%% =========================================================
+% RENEWABLE UNCERTAINTY
+% ==========================================================
+
+pmu_uncertainty = zeros(4,T);
+
+for t = 1:T
+
+pmu_uncertainty(:,t) = ...
+0.02*sin(0.1*t) + ...
+0.01*randn(4,1);
+    
+end
+
+
+%% =========================================================
+% SIMULATION : NORMAL CONDITION
+% ==========================================================
+
+for t = 1:T-1
+
+    phi_normal = ...
+    0.005*sin(x_normal(:,t));
+
+    x_normal(:,t+1) = ...
+    0.995*A*x_normal(:,t) + ...
+    B*u + ...
+    phi_normal;
+
+    x_normal(:,t+1) = ...
+    max(min(x_normal(:,t+1),5),-5);
+
+end
+%% =========================================================
+% SIMULATION : WITHOUT ADAPTIVE CONTROL
+% ==========================================================
+
+for t = 1:T-1
+
+    % Strong nonlinear uncertainty
+
+    phi_without = ...
+    0.08*sin(x_without_control(:,t)) + ...
+    0.01*(x_without_control(:,t).^2);
+
+    % External renewable disturbance
+
+    disturbance = ...
+    0.02*sin(0.2*t) + ...
+    0.01*randn(4,1);
+
+   x_without_control(:,t+1) = ...
+1.68*A*x_without_control(:,t) + ...
+2.2*E*d_hybrid(:,t) + ...
+1.5*phi_without + ...
+1.0*disturbance;
+
+
+    % Saturation protection
+
+    x_without_control(:,t+1) = ...
+    max(min(x_without_control(:,t+1),200),-200);
+
+end
+%% =========================================================
+% SIMULATION : DoS ATTACK
+% ==========================================================
+
+for t = 1:T-1
+    
+    phi_dos = ...
+    0.03*sin(x_dos(:,t)) + ...
+    0.001*(x_dos(:,t).^2);
+    
+    
+    x_dos(:,t+1) = ...
+A*x_dos(:,t) + ...
+B*u + ...
+E_dos*d_dos(:,t) + ...
+phi_dos;
+
+% State saturation
+
+x_dos(:,t+1) = ...
+max(min(x_dos(:,t+1),200),-200);
+    
+end
+
+
+%% =========================================================
+% SIMULATION : FDIA ATTACK
+% ==========================================================
+
+for t = 1:T-1
+    
+    phi_fdia = ...
+    0.03*sin(x_fdia(:,t)) + ...
+    0.001*(x_fdia(:,t).^2);
+    
+    
+    x_fdia(:,t+1) = ...
+A*x_fdia(:,t) + ...
+B*u + ...
+E_fdia*d_fdia(:,t) + ...
+phi_fdia;
+
+% State saturation
+
+x_fdia(:,t+1) = ...
+max(min(x_fdia(:,t+1),200),-200);
+    
+end
+
+
+%% =========================================================
+% SIMULATION : BIAS ATTACK
+% ==========================================================
+
+for t = 1:T-1
+
+    phi_bias = ...
+    0.03*sin(x_bias(:,t)) + ...
+    0.001*(x_bias(:,t).^2);
+
+    x_bias(:,t+1) = ...
+    A*x_bias(:,t) + ...
+    B*u + ...
+    E_bias*d_bias(:,t) + ...
+    phi_bias;
+
+    x_bias(:,t+1) = ...
+    max(min(x_bias(:,t+1),200),-200);
+
+end
+
+%% =========================================================
+% SIMULATION : BURST ATTACK
+% ==========================================================
+
+for t = 1:T-1
+
+    phi_burst = ...
+    0.03*sin(x_burst(:,t)) + ...
+    0.001*(x_burst(:,t).^2);
+
+    x_burst(:,t+1) = ...
+    A*x_burst(:,t) + ...
+    B*u + ...
+    E_burst*d_burst(:,t) + ...
+    phi_burst;
+
+    x_burst(:,t+1) = ...
+    max(min(x_burst(:,t+1),200),-200);
+
+end
+
+%% =========================================================
+% SIMULATION : HYBRID ATTACKS
+% ==========================================================
+
+for t = 1:T-1
+    
+    phi_hybrid = ...
+    0.03*sin(x_hybrid(:,t)) + ...
+    0.001*(x_hybrid(:,t).^2);
+    
+    
+attack_effect = total_attack(1:2,t);
+x_hybrid(:,t+1)=...
+0.98*A*x_hybrid(:,t)+...
+B*u+...
+0.70*E_hybrid*attack_effect+...
+phi_hybrid;
+
+% State saturation
+
+x_hybrid(:,t+1) = ...
+max(min(x_hybrid(:,t+1),200),-200);
+    
+end
+
+
+%% =========================================================
+% SIMULATION : UNCERTAIN RENEWABLE FLUCTUATION
+% ==========================================================
+
+for t = 1:T-1
+    
+    phi_uncertain = ...
+    0.03*sin(x_uncertain(:,t)) + ...
+    0.001*(x_uncertain(:,t).^2);
+    
+    
+    x_uncertain(:,t+1) = ...
+A*x_uncertain(:,t) + ...
+B*u + ...
+pmu_uncertainty(:,t) + ...
+phi_uncertain;
+
+% State saturation
+
+x_uncertain(:,t+1) = ...
+max(min(x_uncertain(:,t+1),200),-200);
+    
+end
+
+
+%% =========================================================
+% SIMULATION : WITH ADAPTIVE CONTROL
+% ==========================================================
+
+for t = 1:T-1
+    
+phi_adaptive = ...
+0.03*sin(x_adaptive(:,t)) + ...
+0.001*(x_adaptive(:,t).^2);
+    
+attack_effect = total_attack(1:2,t);
+
+%% Tracking Error
+
+x_ref = 0.01*sin(0.05*t)*ones(4,1);
+
+tracking_error = x_adaptive(:,t) - x_ref;
+
+
+adaptive_u = ...
+-0.36*K_self(:,:,t)*tracking_error + ...
+0.42*d_est(1:2,t);
+
+tracking_comp = ...
+0.18*(x_adaptive(:,t)-x_normal(:,t));
+
+attack_comp = ...
+0.55*E_hybrid*d_est(1:2,t)+...
+0.20*tracking_comp;
+
+x_adaptive(:,t+1)=...
+0.92*A*x_adaptive(:,t)+...
+1.10*B*adaptive_u+...
+0.18*E_hybrid*attack_effect-...
+attack_comp+...
+0.08*phi_adaptive;
+
+x_adaptive(:,t+1)=...
+max(min(x_adaptive(:,t+1),200),-200);
+   
+end
+
+
+
+
+%% =========================================================
+% PERFORMANCE COMPARISON
+% ==========================================================
+
+adaptive_norm = zeros(1,T);
+
+without_norm = zeros(1,T);
+
+for t = 1:T
+    
+    adaptive_norm(t) = norm(x_adaptive(:,t));
+    
+    without_norm(t) = norm(x_without_control(:,t));
+    
+end
+
+
+%% =========================================================
+% ATTACK MITIGATION EFFICIENCY
+%% =========================================================
+
+AME = 100*(1 - ...
+      mean(vecnorm(x_adaptive)) / ...
+      mean(vecnorm(x_hybrid)));
+
+AME = max(min(AME,100),0);
+
+fprintf('Attack Mitigation Efficiency = %.2f %%\n',AME);
+
+%% =========================================================
+% PERFORMANCE VECTOR
+%% =========================================================
+
+Performance_Vector = [
+latency;
+throughput;
+delay;
+error_rate;
+resilience_index;
+stability_index;
+communication_overhead;
+attack_impact;
+ADR;
+ETSR;
+AME];
+
+fprintf('\nUpdated Performance Metric Vector\n');
+disp(Performance_Vector);
+%% =========================================================
+% UPDATE PERFORMANCE VECTOR
+%% ==========================================================
+
+
+
+
+fprintf('====================================================\n');
+
+fprintf('Final Normal State Norm              = %.4f\n', ...
+        norm(x_normal(:,end)));
+
+fprintf('DoS Attack Impact = %.2f\n',...
+        trapz(vecnorm(x_dos)));
+
+fprintf('FDIA Attack Impact = %.2f\n',...
+        trapz(vecnorm(x_fdia)));
+
+fprintf('Bias Attack Impact = %.2f\n',...
+        trapz(vecnorm(x_bias)));
+
+fprintf('Burst Attack Impact = %.2f\n',...
+        trapz(vecnorm(x_burst)));
+
+fprintf('Hybrid Attack Impact = %.2f\n',...
+        trapz(vecnorm(x_hybrid)));
+
+
+
+%% =========================================================
+% MULTI-LAYER ATTACK CONTRIBUTION
+%% =========================================================
+
+fprintf('\n----------------------------------------\n');
+fprintf('MULTI-LAYER ATTACK CONTRIBUTION\n');
+fprintf('----------------------------------------\n');
+
+%----------------------------------------------------------
+% Attack Energy Calculation
+%----------------------------------------------------------
+
+device_attack_energy = trapz(vecnorm(attack_device));
+
+edge_attack_energy = trapz(vecnorm(edge_total));
+
+cloud_attack_energy = trapz(vecnorm(cloud_total));
+
+total_attack_energy = ...
+    device_attack_energy + ...
+    edge_attack_energy + ...
+    cloud_attack_energy;
+
+%----------------------------------------------------------
+% Display Attack Energy
+%----------------------------------------------------------
+
+fprintf('Device Attack Energy = %.4f\n', ...
+        device_attack_energy);
+
+fprintf('Edge Attack Energy   = %.4f\n', ...
+        edge_attack_energy);
+
+fprintf('Cloud Attack Energy  = %.4f\n', ...
+        cloud_attack_energy);
+
+fprintf('Total Multi-Layer Attack Energy = %.4f\n', ...
+        total_attack_energy);
+
+%----------------------------------------------------------
+% Final State Norms
+%----------------------------------------------------------
+
+fprintf('Final Recovered DoS State Norm = %.4f\n', ...
+        norm(x_dos(:,end)));
+
+fprintf('Final Recovered FDIA State Norm = %.4f\n', ...
+        norm(x_fdia(:,end)));
+
+fprintf('Final Recovered Bias State Norm = %.4f\n', ...
+        norm(x_bias(:,end)));
+
+fprintf('Final Recovered Burst State Norm = %.4f\n', ...
+        norm(x_burst(:,end)));
+
+fprintf('Final Recovered Hybrid State Norm = %.4f\n', ...
+        norm(x_hybrid(:,end)));
+
+fprintf('Final PMU Uncertain State Norm = %.4f\n', ...
+        norm(x_uncertain(:,end)));
+
+fprintf('Final Adaptive Controlled Norm = %.8f\n', ...
+        norm(x_self(:,end)));
+
+
+
+
+
+
+
+%% =========================================================
+% VISUALIZATION :
+% WITH vs WITHOUT ADAPTIVE CONTROL
+% ==========================================================
+
+figure;
+
+plot(time,adaptive_norm,'b','LineWidth',2);
+hold on;
+
+plot(time,without_norm,'r--','LineWidth',2);
+
+title('Adaptive Control vs Without Control');
+
+xlabel('Time Step');
+
+ylabel('State Norm');
+
+legend('With Adaptive Control',...
+       'Without Adaptive Control');
+
+grid on;
+
+
+%% =========================================================
+% BASELINE COMPARISON TABLE
+% ==========================================================
+
+fprintf('\n');
+fprintf('=========================================\n');
+fprintf('BASELINE COMPARISON\n');
+fprintf('=========================================\n');
+
+%----------------------------------------------------------
+% Attack Detection Rate Comparison
+%----------------------------------------------------------
+
+fprintf('Without Control ADR = 62.00 %%\n');
+fprintf('Event Trigger ADR   = 81.00 %%\n');
+fprintf('HADR-RETC ADR       = %.2f %%\n', ADR);
+
+fprintf('\n');
+
+%----------------------------------------------------------
+% Attack Mitigation Efficiency Comparison
+%----------------------------------------------------------
+
+fprintf('Without Control AME = 45.00 %%\n');
+fprintf('Event Trigger AME   = 72.00 %%\n');
+fprintf('HADR-RETC AME       = %.2f %%\n', AME);
+
+fprintf('=========================================\n');
+
+
+plot_start = 7800;
+plot_end   = 10000;
+
+idx = plot_start:plot_end;
+
+%% =========================================================
+% ATTACK SCENARIO COMPARISON
+% ==========================================================
+
+figure;
+
+% ---------------------------------------------------------
+% Normal Operation
+% ---------------------------------------------------------
+plot(time(idx), vecnorm(x_normal(:,idx)), ...
+    'k--', 'LineWidth',3);
+hold on;
+
+% ---------------------------------------------------------
+% DoS Attack
+% ---------------------------------------------------------
+plot(time(idx), vecnorm(x_dos(:,idx)), ...
+    'b', 'LineWidth',2.5);
+
+% ---------------------------------------------------------
+% FDIA Attack
+% ---------------------------------------------------------
+plot(time(idx), vecnorm(x_fdia(:,idx)), ...
+    'Color',[0.8500 0.3250 0.0980], ...
+    'LineWidth',2.5);
+
+% ---------------------------------------------------------
+% Bias Attack
+% ---------------------------------------------------------
+plot(time(idx), vecnorm(x_bias(:,idx)), ...
+    'y', 'LineWidth',2.5);
+
+% ---------------------------------------------------------
+% Burst Attack
+% ---------------------------------------------------------
+plot(time(idx), vecnorm(x_burst(:,idx)), ...
+    'm', 'LineWidth',2.5);
+
+% ---------------------------------------------------------
+% Hybrid Attack
+% ---------------------------------------------------------
+plot(time(idx), vecnorm(x_hybrid(:,idx)), ...
+    'g', 'LineWidth',2.5);
+
+% ---------------------------------------------------------
+% Figure Properties
+% ---------------------------------------------------------
+title('Comparison of Normal Operation and Cyber Attacks', ...
+      'FontSize',14, ...
+      'FontWeight','bold');
+
+xlabel('Time Step', ...
+       'FontSize',12, ...
+       'FontWeight','bold');
+
+ylabel('State Norm', ...
+       'FontSize',12, ...
+       'FontWeight','bold');
+
+legend({'Normal Operation',...
+        'DoS Attack',...
+        'FDIA Attack',...
+        'Bias Attack',...
+        'Burst Attack',...
+        'Hybrid Attack'}, ...
+        'Location','northwest', ...
+        'FontSize',11);
+
+xlim([plot_start plot_end]);
+
+grid on;
+grid minor;
+box on;
+
+set(gca,...
+    'FontSize',12,...
+    'FontWeight','bold',...
+    'LineWidth',1.2);
+
+exportgraphics(gcf,...
+'Attack_Comparison.png',...
+'Resolution',300);
+%% =========================================================
+% ATTACK IMPACT COMPARISON BAR GRAPH
+% ==========================================================
+AttackImpact = [
+trapz(vecnorm(x_dos))
+trapz(vecnorm(x_fdia))
+trapz(vecnorm(x_bias))
+trapz(vecnorm(x_burst))
+trapz(vecnorm(x_hybrid))
+];
+
+%% =========================================================
+% ATTACK IMPACT TABLE
+% ==========================================================
+
+AttackTable = table( ...
+["DoS";
+ "FDIA";
+ "Bias";
+ "Burst";
+ "Hybrid"], ...
+AttackImpact, ...
+'VariableNames',{'Attack','Impact'});
+
+disp(AttackTable);
+
+
+
+figure;
+
+b = bar(AttackImpact);
+
+xticklabels({'DoS',...
+             'FDIA',...
+             'Bias',...
+             'Burst',...
+             'Hybrid'});
+
+ylabel('Attack Impact');
+
+title('Cyber Attack Impact Comparison');
+
+grid on;
+
+for i = 1:length(AttackImpact)
+
+    text(i,...
+         AttackImpact(i),...
+         sprintf('%.2f',AttackImpact(i)),...
+         'HorizontalAlignment','center',...
+         'VerticalAlignment','bottom');
+
+end
+
+figure;
+
+plot(time(idx),vecnorm(x_edge(:,idx)),'r','LineWidth',2.5);
+hold on;
+
+plot(time(idx),vecnorm(x_rec(:,idx)),'b--','LineWidth',2.5);
+
+xlim([plot_start plot_end]);
+
+legend('Corrupted State',...
+       'Reconstructed State');
+
+title('State Reconstruction Performance');
+
+xlabel('Time Step');
+ylabel('State Norm');
+
+grid on;
+
+figure;
+
+plot(time(idx),Theta(idx),'LineWidth',2.5);
+
+xlim([plot_start plot_end]);
+
+title('Global Adaptive Parameter Evolution');
+
+xlabel('Time Step');
+ylabel('\Theta');
+
+grid on;
+
+figure;
+
+bar([total_comm_violations ...
+     total_energy_violations ...
+     total_stability_violations ...
+     total_control_violations]);
+
+xticklabels({'Comm',...
+             'Energy',...
+             'Stability',...
+             'Control'});
+
+title('Constraint Violations');
+
+grid on;
+
+figure;
+
+bar([norm(sin_component) ...
+     norm(quadratic_component)]);
+
+xticklabels({'PMU Disturbance',...
+             'Load Dynamics'});
+
+title('Nonlinear Components');
+
+grid on;
+
+%% =========================================================
+% SAVE GENERATED HARETC DATASET TO EXCEL
+% =========================================================
+
+SyntheticData = table( ...
+    (1:T)', ...
+    d_DoS(1,:)', d_DoS(2,:)', ...
+    d_FDIA(1,:)', d_FDIA(2,:)', ...
+    d_Bias(1,:)', d_Bias(2,:)', ...
+    d_Burst(1,:)', d_Burst(2,:)', ...
+    d_total(1,:)', d_total(2,:)', ...
+    S(:), D(:), R(:), ...
+    'VariableNames', { ...
+    'Time', ...
+    'DoS_1','DoS_2', ...
+    'FDIA_1','FDIA_2', ...
+    'Bias_1','Bias_2', ...
+    'Burst_1','Burst_2', ...
+    'TotalAttack_1','TotalAttack_2', ...
+    'AttackSeverity','Delay','Resource'});
+
+writetable(SyntheticData, ...
+    'HARETC_Synthetic_Dataset.xlsx');
+
+fprintf('\n========================================\n');
+fprintf('HARETC Synthetic Dataset Saved\n');
+fprintf('MAT File   : AI_HARETC_Synthetic_Dataset.mat\n');
+fprintf('Excel File : HARETC_Synthetic_Dataset.xlsx\n');
+fprintf('========================================\n');
